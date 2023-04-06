@@ -293,6 +293,7 @@ where
                 f.write("$");
                 f.write(name.as_ref());
             }
+            Value::BigInt(ref num) => f.write(&format!("{}", num.0)),
             Value::Int(ref num) => f.write(&format!("{}", num.0)),
             Value::Float(val) => f.write(&format!("{}", val)),
             Value::String(ref val) => f.write_quoted(val),

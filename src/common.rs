@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::{collections::BTreeMap, fmt};
 
 use combine::combinator::{choice, many, many1, optional, position};
@@ -52,11 +53,15 @@ pub struct Directive<'a, T: Text<'a>> {
 #[derive(Debug, Clone, PartialEq)]
 // we use i64 as a reference implementation: graphql-js thinks even 32bit
 // integers is enough. We might consider lift this limit later though
-pub struct Number(pub(crate) i64);
+pub struct Number(pub(crate) u64);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BigNumber(pub(crate) u128);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value<'a, T: Text<'a>> {
     Variable(T::Value),
+    BigInt(BigNumber),
     Int(Number),
     Float(f64),
     String(String),
@@ -71,6 +76,7 @@ impl<'a, T: Text<'a>> Value<'a, T> {
     pub fn into_static(&self) -> Value<'static, String> {
         match self {
             Self::Variable(v) => Value::Variable(v.as_ref().into()),
+            Self::BigInt(i) => Value::BigInt(i.clone()),
             Self::Int(i) => Value::Int(i.clone()),
             Self::Float(f) => Value::Float(*f),
             Self::String(s) => Value::String(s.clone()),
@@ -94,16 +100,33 @@ pub enum Type<'a, T: Text<'a>> {
     NonNullType(Box<Type<'a, T>>),
 }
 
-impl Number {
+impl BigNumber {
     /// Returns a number as i64 if it fits the type
-    pub fn as_i64(&self) -> Option<i64> {
-        Some(self.0)
+    pub fn as_u64(&self) -> Option<u64> {
+        if let Ok(n) = TryInto::<u64>::try_into(self.0) {
+            Some(n)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_u128(&self) -> u128 {
+        self.0
     }
 }
 
-impl From<i32> for Number {
-    fn from(i: i32) -> Self {
-        Number(i as i64)
+impl Number {
+    /// Returns a number as i64 if it fits the type
+    pub fn as_i64(&self) -> Option<i64> {
+        if let Ok(n) = TryInto::<i64>::try_into(self.0) {
+            Some(n)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_u64(&self) -> u64 {
+        self.0
     }
 }
 
@@ -140,6 +163,19 @@ where
     )
     .map(|opt| opt.unwrap_or_else(Vec::new))
     .parse_stream(input)
+}
+
+pub fn bigint_value<'a, S>(
+    input: &mut TokenStream<'a>,
+) -> ParseResult<Value<'a, S>, TokenStream<'a>>
+where
+    S: Text<'a>,
+{
+    kind(T::BigIntValue)
+        .and_then(|tok| tok.value.parse())
+        .map(BigNumber)
+        .map(Value::BigInt)
+        .parse_stream(input)
 }
 
 pub fn int_value<'a, S>(input: &mut TokenStream<'a>) -> ParseResult<Value<'a, S>, TokenStream<'a>>
@@ -300,6 +336,7 @@ where
         .or(name::<'a, T>().map(Value::Enum))
         .or(parser(int_value))
         .or(parser(float_value))
+        .or(parser(bigint_value))
         .or(parser(string_value))
         .or(parser(block_string_value))
         .parse_stream(input)
@@ -367,21 +404,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::unquote_string;
-    use super::Number;
-
-    #[test]
-    fn number_from_i32_and_to_i64_conversion() {
-        assert_eq!(Number::from(1).as_i64(), Some(1));
-        assert_eq!(Number::from(584).as_i64(), Some(584));
-        assert_eq!(
-            Number::from(i32::min_value()).as_i64(),
-            Some(i32::min_value() as i64)
-        );
-        assert_eq!(
-            Number::from(i32::max_value()).as_i64(),
-            Some(i32::max_value() as i64)
-        );
-    }
 
     #[test]
     fn unquote_unicode_string() {

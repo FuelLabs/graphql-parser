@@ -1,4 +1,5 @@
 use std::fmt;
+use std::num::IntErrorKind;
 
 use combine::easy::{Error, Errors};
 use combine::error::StreamError;
@@ -12,6 +13,7 @@ pub enum Kind {
     Punctuator,
     Name,
     IntValue,
+    BigIntValue,
     FloatValue,
     StringValue,
     BlockString,
@@ -97,6 +99,17 @@ fn check_int(value: &str) -> bool {
             && value != "-"
             && !value.starts_with("-0")
             && value[1..].chars().all(|x| x >= '0' && x <= '9'))
+}
+
+// NOTE: This should only be used after we verify that the string
+// passes the check_int check
+fn check_bigint(value: &str) -> bool {
+    if let Err(parse_error) = value.parse::<u64>() {
+        if let IntErrorKind::PosOverflow = parse_error.kind() {
+            return true;
+        }
+    }
+    false
 }
 
 fn check_dec(value: &str) -> bool {
@@ -250,8 +263,11 @@ impl<'a> TokenStream<'a> {
                             "unsupported integer {:?}",
                             value
                         )));
+                    } else if check_bigint(value) {
+                        self.advance_token(BigIntValue, len)
+                    } else {
+                        self.advance_token(IntValue, len)
                     }
-                    self.advance_token(IntValue, len)
                 }
             }
             '"' => {

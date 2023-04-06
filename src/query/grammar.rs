@@ -359,7 +359,7 @@ mod test {
     #[test]
     #[should_panic(expected = "number too large")]
     fn large_integer() {
-        ast("{ a(x: 10000000000000000000000000000 }");
+        ast("{ a(x: 340282366920938463463374607431768211456 }");
     }
 
     #[test]
